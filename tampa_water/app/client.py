@@ -10,9 +10,9 @@ The portal splits the data across two sources that MUST be joined:
   bill PDF          -> the itemised charges (tiers, wastewater, solid waste)
 
 The PDF carries the BILL date but not the READ date, and they differ by about
-five days. Every meter comparison is summed over a bill's service window, so
-using the bill date would shift each window by that gap and bias the result
-against Flume/Flo. The join below puts the real read date on every bill.
+five days. The service window is published for downstream use, so using the bill
+date would misstate every period by that gap. The join below puts the real read
+date on every bill.
 """
 from __future__ import annotations
 
@@ -99,7 +99,7 @@ class TampaWaterClient:
 
         Matched on bill_date, falling back to the nearest read within 10 days --
         an unmatched bill keeps read_date None rather than silently borrowing the
-        bill date, so a comparison is skipped instead of being computed wrong.
+        bill date, so its service window is reported unknown rather than wrong.
         """
         by_bill_date = {u["bill_date"]: u for u in usage if u.get("bill_date")}
         for b in bills:
@@ -145,7 +145,7 @@ class TampaWaterClient:
         unmatched = [b for b in bills if not b.get("read_date")]
         if unmatched:
             LOG.warning("%d bill(s) have no meter read date; their service window "
-                        "is unknown so meter comparison will skip them", len(unmatched))
+                        "is reported as unknown", len(unmatched))
 
         bills.sort(key=lambda b: b.get("bill_date") or "", reverse=True)
         return {"bills": bills, "usage": usage}

@@ -15,7 +15,6 @@ add-on, applied from the start rather than retrofitted):
 ENV:
   TAMPA_USER, TAMPA_PASS   (required)
   SIDECAR_TOKEN            (optional) require 'X-Auth-Token' on data endpoints
-  COMPARE_ENTITIES         (optional) comma-separated HA entity ids to validate
   POLL_INTERVAL_HOURS      (default 12)  the bill only changes monthly
   BACKFILL_BILLS           (default 24)
   CACHE_DIR                (default ./cache)
@@ -115,7 +114,6 @@ class TampaSession:
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
                 "bills": bills,
                 "usage": got.get("usage", []),
-                "comparison": [],
                 "counts": {"bills": len(bills),
                            "usage_rows": len(got.get("usage", [])),
                            "archived": len(self._cache)},
@@ -127,8 +125,7 @@ class TampaSession:
         bills = sorted(self._cache.values(),
                        key=lambda b: b.get("bill_date") or "", reverse=True)
         return {"exported_at": datetime.now(timezone.utc).isoformat(),
-                "archived": len(self._cache), "bills": bills,
-                "comparison": (self._last_data or {}).get("comparison", [])}
+                "archived": len(self._cache), "bills": bills}
 
 
 session = TampaSession()

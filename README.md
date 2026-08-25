@@ -2,38 +2,39 @@
 
 A **Home Assistant add-on** that brings **City of Tampa** water, wastewater and
 solid-waste billing into Home Assistant — billed gallons and cost on the **Water
-Dashboard**, a **per-tier** cost breakdown, a never-purged bill archive, a sidebar
-dashboard, and an optional **accuracy check** that compares Flume / Flo against
-the meter you are actually billed on.
+Dashboard**, a **per-tier** cost breakdown, a sidebar dashboard, and a
+never-purged bill archive.
 
 ## Why
 
-Tampa reads water meters **monthly**, so this is not a usage monitor — a Flume or
-Flo will always tell you more about *when* water was used. What only the utility
-has is the **billed** number: the meter of record, and what it costs. This add-on
-brings that in so you can:
+Tampa reads water meters **monthly**, so this is not a usage monitor — a
+dedicated flow sensor will always tell you more about *when* water was used. What
+only the utility has is the **billed** number: the meter of record, and what it
+costs. This add-on brings that in so you can:
 
 - see money spent on water in the Water Dashboard, split by conservation tier
 - track water / wastewater / solid waste over months and years
-- **validate your other water sensors** against the billed meter
+- reconcile your own water sensors against the meter of record
 
-## The accuracy check
+## Comparing against your own water sensors
 
-Billing periods do **not** line up with calendar months — a bill might run
-`2026-06-22 → 2026-07-23`. Comparing a device's "July" total against the July
-bill would be wrong by a week of usage.
+This add-on deliberately does **not** compare anything — that belongs in Home
+Assistant, alongside whatever water sensors you actually run. What it owes such a
+comparison is the billed number and the exact window it covers, published as
+attributes on `sensor.tampa_water_last_bill_usage`:
 
-For each bill, this add-on reads your comparison entities back out of HA's
-recorder over that bill's **exact service window** (meter read to meter read) and
-publishes the variance:
-
+```yaml
+state: 11220            # gallons billed
+attributes:
+  period_start: 2026-06-22   # first day of the service period
+  period_end:   2026-07-23   # the day the meter was actually read
+  service_days: 31
+  ccf: 15
+  meter_read: 3692
 ```
-sensor.tampa_water_vs_flume    +2.1 %   (11,455 gal measured vs 11,220 billed)
-sensor.tampa_water_vs_flo      -4.8 %   (10,681 gal measured vs 11,220 billed)
-```
 
-Set `compare_entities` to the statistic ids of your water meters, comma
-separated. Leave it empty to disable.
+**Use those dates.** Billing periods do not follow calendar months, so summing
+another sensor over "July" would be wrong by a week of usage.
 
 > **Wastewater is capped.** Tampa bills sewer on a *Sewer Max / Lawn Credit* —
 > the third-lowest monthly usage over 24 months. In irrigation months your sewer
@@ -52,17 +53,16 @@ volume of every water source, so a source per tier would multiply your gallons.
 
 **Sensors** — `tampa_water_amount_due`, `_last_bill_usage`, `_last_bill_cost`,
 `_cost_per_1000_gal`, `_tier_<n>_cost`, `tampa_wastewater_cost`,
-`tampa_solid_waste_cost`, `_sewer_cap`, plus the comparison sensors.
+`tampa_solid_waste_cost`, `_sewer_cap`, `_bill_date`.
 
 **Sidebar dashboard** — gallons per bill, stacked cost by service, cost by tier,
-the meter check, and a sortable archive with CSV export.
+and a sortable archive with CSV export.
 
 ## Install
 
 1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add this repo URL.
 2. Install **Tampa Water**.
 3. **Configuration** tab → your `utilities.tampagov.net` username and password.
-   Optionally set `compare_entities`.
 4. **Start**, then open the **Tampa Water** sidebar panel.
 
 The bill only changes monthly, so the default poll is every 12 hours.
@@ -84,8 +84,8 @@ The portal splits the data, and both halves are needed:
 
 The PDF carries the *bill* date but not the *read* date, and Tampa bills about
 five days after reading. Bills are therefore joined to the consumption chart so
-every service window uses the real read date; a bill that cannot be matched is
-skipped for comparison rather than compared over the wrong week.
+every published service window uses the real read date; a bill that cannot be
+matched reports its window as unknown rather than stating the wrong dates.
 
 Charges are parsed by **shape** (`<label> <qty> @ <rate> <amount>`) rather than by
 matching labels, because Tampa varies the wording between bills. Every parsed
@@ -111,7 +111,8 @@ python scripts/check_no_pii.py  # also runs as a pre-commit hook
 
 ## Limitations
 
-- Monthly resolution — that is all Tampa publishes. Use Flume/Flo for usage.
+- Monthly resolution — that is all Tampa publishes. Use a dedicated flow
+  sensor if you want to see usage as it happens.
 - The bill arrives roughly a month in arrears.
 - **Stormwater is not on this bill.** Tampa collects it as a non-ad valorem
   assessment on the county property tax bill.

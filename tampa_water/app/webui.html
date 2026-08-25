@@ -91,16 +91,6 @@
       <div class="bars" id="tierBars"></div><div class="axis" id="tierAxis"></div>
     </section>
 
-    <section id="cmpSection" style="display:none">
-      <h2>Meter check — Flume / Flo vs the billed meter</h2>
-      <div class="muted" style="margin-bottom:10px">
-        Each device is summed over the bill's exact service window (meter read to
-        meter read), not the calendar month.
-      </div>
-      <table id="cmpTbl"><thead><tr>
-        <th>Service period</th><th>Billed (gal)</th>
-      </tr></thead><tbody></tbody></table>
-    </section>
 
     <section>
       <h2>All bills <span class="muted" id="billCount"></span></h2>
@@ -240,7 +230,6 @@ function render(){
                       color:TIER_COLORS[n%TIER_COLORS.length]})),
     b=>b&&b.bill_date);
 
-  renderComparison();
   renderTable(all);
   $("#status").style.display="none"; $("#content").style.display="block";
 }
@@ -251,26 +240,6 @@ function dateMinus(iso, days){
   return d.toISOString().slice(0,10);
 }
 
-function renderComparison(){
-  const cmp = DATA.comparison||[];
-  if(!cmp.length){ $("#cmpSection").style.display="none"; return; }
-  $("#cmpSection").style.display="";
-  const ids=[...new Set(cmp.flatMap(c=>Object.keys(c.entities||{})))];
-  const thead=$("#cmpTbl thead tr");
-  thead.innerHTML='<th>Service period</th><th>Billed (gal)</th>'+
-    ids.map(i=>`<th>${i.split(".").pop()}</th>`).join("");
-  $("#cmpTbl tbody").innerHTML = cmp.slice().reverse().map(c=>{
-    const cells = ids.map(i=>{
-      const v=(c.entities||{})[i];
-      if(!v) return "<td>—</td>";
-      const cls = Math.abs(v.diff_pct??0)<=5 ? "good":"bad";
-      return `<td>${fmt(v.total_gallons)}<br>`+
-             `<span class="pill ${cls}">${v.diff_pct>0?"+":""}${fmt(v.diff_pct,1)}%</span></td>`;
-    }).join("");
-    return `<tr><td>${c.period_start} → ${c.period_end}</td>`+
-           `<td>${fmt(c.billed_gallons)}</td>${cells}</tr>`;
-  }).join("");
-}
 
 // deposits and set-up fees are real charges but not a service line, so without
 // this column the Sept row reads as water+wastewater+trash != total

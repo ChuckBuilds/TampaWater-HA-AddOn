@@ -44,8 +44,6 @@ jobs:
         run: pip install -r tampa_water/app/requirements.txt 'httpx<1' ruff
       - name: Bill parser reconciliation
         run: python tests/test_parsers.py
-      - name: Meter-comparison window arithmetic
-        run: python tests/test_window.py
       - name: API must not be reachable without a token
         run: python tests/test_auth.py
       - name: Byte-compile

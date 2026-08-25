@@ -3,9 +3,8 @@ version: "1.0.0"
 slug: tampa_water
 description: >-
   Pulls City of Tampa water, wastewater and solid-waste billing into Home
-  Assistant - billed gallons and cost on the Water Dashboard, per-tier cost
-  breakdown, a never-purged bill archive, and an optional accuracy check that
-  compares Flume / Flo against the meter you are actually billed on.
+  Assistant - billed gallons and cost on the Water Dashboard, a per-tier cost
+  breakdown, a sidebar dashboard and a never-purged bill archive.
 url: https://github.com/ChuckBuilds/TampaWater-HA-AddOn
 arch:
   - amd64
@@ -41,7 +40,6 @@ options:
   tampa_user: ""
   tampa_pass: ""
   auth_token: ""
-  compare_entities: ""
   backfill_bills: 24
   poll_interval_hours: 12
   setup_water_dashboard: true
@@ -50,7 +48,6 @@ schema:
   tampa_user: str
   tampa_pass: password
   auth_token: password?
-  compare_entities: str?
   backfill_bills: int(1,60)
   poll_interval_hours: int(1,48)
   setup_water_dashboard: bool

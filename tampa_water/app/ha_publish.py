@@ -11,10 +11,11 @@ Three jobs:
 
   2. Sensors -- amount due, per-tier cost, wastewater, solid waste, sewer cap.
 
-  3. Meter validation -- for each billed service period, read the user's Flume
-     and Flo totals back out of HA's recorder over THAT EXACT WINDOW and publish
-     the variance. Billing periods do not align to calendar months, so comparing
-     against "August" would be wrong by a week of usage.
+Correlating this against other water sensors is deliberately NOT done here; that
+belongs in Home Assistant. What this module owes such a comparison is the exact
+SERVICE WINDOW of each bill, which is published as attributes -- billing periods
+do not follow calendar months, so summing another sensor over "August" would be
+wrong by a week of usage.
 """
 from __future__ import annotations
 
@@ -35,10 +36,6 @@ STAT_TRASH_COST = "tampa_water:solid_waste_cost"
 STAT_TIER = "tampa_water:water_tier_{n}_cost"
 
 WATER_UNIT = "gal"
-
-# Entities to compare the bill against. Configured by the user; empty disables it.
-COMPARE_ENTITIES = [e.strip() for e in
-                    (os.environ.get("COMPARE_ENTITIES") or "").split(",") if e.strip()]
 
 
 def available() -> bool:
@@ -74,9 +71,9 @@ def _period_end(b: dict) -> date | None:
     """The day the meter was actually READ.
 
     Deliberately does NOT fall back to bill_date: Tampa bills about five days
-    after the read, so using it would shift every comparison window by that gap
-    and bias the result against Flume/Flo. Better to skip a bill than to compare
-    the wrong week.
+    after the read, so using it would shift every published service window by
+    that gap. Better to report the window as unknown than to state the wrong
+    week.
     """
     return _as_date(b.get("read_date"))
 
@@ -175,115 +172,11 @@ async def import_statistics(session, bills: list[dict], tz, log) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# meter validation: Flume / Flo vs the billed meter
-# --------------------------------------------------------------------------- #
-def window_total(series: list[dict], window_start_iso: str) -> float | None:
-    """Consumption inside [window_start, end] from HA statistics buckets.
-
-    `series` is expected to start ONE bucket before the window (see the caller).
-
-    Preferred path is HA's per-bucket `change`, summed over in-window buckets.
-    Otherwise fall back to cumulative `sum`, using the last bucket that starts
-    BEFORE the window as the baseline -- subtracting the first in-window bucket
-    instead would discard that bucket's own consumption.
-    """
-    if not series:
-        return None
-    ws = window_start_iso[:10]
-
-    def in_window(p) -> bool:
-        return str(p.get("start", ""))[:10] >= ws
-
-    inside = [p for p in series if in_window(p)]
-    if not inside:
-        return None
-    if all(p.get("change") is not None for p in inside):
-        return round(sum(float(p["change"]) for p in inside), 1)
-
-    baseline = None
-    for p in series:
-        if not in_window(p) and p.get("sum") is not None:
-            baseline = p
-    last = inside[-1]
-    if last.get("sum") is None:
-        return None
-    if baseline is not None:
-        return round(float(last["sum"]) - float(baseline["sum"]), 1)
-    # no baseline available: the best we can do is first-to-last, which
-    # under-counts by the first bucket. Signal that rather than mislead.
-    return None
-
-
-async def compare_meters(session, bills: list[dict], tz, log) -> list[dict]:
-    """Sum each comparison entity over each bill's service window.
-
-    Returns [{period_start, period_end, billed_gallons, entities:{id: {...}}}].
-    """
-    if not COMPARE_ENTITIES or not bills:
-        return []
-    ws = await _ws(session)
-    if ws is None:
-        return []
-    results: list[dict] = []
-    try:
-        mid = 100
-        for b in bills:
-            start, end = _period_start(b), _period_end(b)
-            billed = b.get("water_gallons")
-            if not (start and end and billed):
-                continue
-            # Ask for one extra day BEFORE the window so a cumulative meter has a
-            # baseline bucket to subtract from. Without it, last.sum - first.sum
-            # measures from the END of the first in-window bucket and silently
-            # drops that day -- a ~3% under-count over a month, which is the same
-            # size as the discrepancy this check exists to find.
-            s_iso = datetime(start.year, start.month, start.day,
-                             tzinfo=tz).isoformat()
-            base = start - timedelta(days=1)
-            b_iso = datetime(base.year, base.month, base.day, tzinfo=tz).isoformat()
-            e_iso = datetime(end.year, end.month, end.day, tzinfo=tz).isoformat()
-            entry = {"period_start": start.isoformat(), "period_end": end.isoformat(),
-                     "billed_gallons": billed, "entities": {}}
-            for eid in COMPARE_ENTITIES:
-                await ws.send_json({
-                    "id": mid, "type": "recorder/statistics_during_period",
-                    "start_time": b_iso, "end_time": e_iso,
-                    "statistic_ids": [eid], "period": "day",
-                    "types": ["change", "sum", "state"],
-                })
-                resp = await ws.receive_json()
-                mid += 1
-                series = (resp.get("result") or {}).get(eid) or []
-                if not series:
-                    continue
-                # a cumulative meter: total over the window is last sum - first sum
-                total = window_total(series, s_iso)
-                if total is None:
-                    continue
-                diff = round(total - float(billed), 1)
-                pct = round(diff / float(billed) * 100.0, 2) if billed else None
-                entry["entities"][eid] = {"total_gallons": total,
-                                          "diff_gallons": diff, "diff_pct": pct}
-            if entry["entities"]:
-                results.append(entry)
-    finally:
-        await ws.close()
-    if results:
-        latest = results[-1]
-        for eid, v in latest["entities"].items():
-            log.info("meter check %s: %s gal vs billed %s (%+.1f%%)",
-                     eid, v["total_gallons"], latest["billed_gallons"],
-                     v["diff_pct"] if v["diff_pct"] is not None else 0.0)
-    return results
-
-
-# --------------------------------------------------------------------------- #
 # sensors
 # --------------------------------------------------------------------------- #
 def sensor_payloads(data: dict) -> list[tuple[str, object, dict]]:
     bills = data.get("bills") or []
     last = bills[0] if bills else {}
-    cmp_latest = (data.get("comparison") or [{}])[-1] if data.get("comparison") else {}
 
     def s(eid, state, **attrs):
         attrs.setdefault("attribution", "Data provided by City of Tampa Utilities")
@@ -293,10 +186,18 @@ def sensor_payloads(data: dict) -> list[tuple[str, object, dict]]:
         s("sensor.tampa_water_amount_due", last.get("amount_due"),
           unit_of_measurement="USD", device_class="monetary",
           friendly_name="Tampa Water Amount Due", icon="mdi:cash"),
+        # The service window is published here on purpose: it is what an
+        # HA-side comparison against another water sensor needs in order to sum
+        # the right days. Billing periods do not follow calendar months.
         s("sensor.tampa_water_last_bill_usage", last.get("water_gallons"),
           unit_of_measurement="gal", device_class="water", state_class="total",
           friendly_name="Tampa Water Last Bill Usage",
-          ccf=last.get("water_ccf"), service_days=last.get("service_days")),
+          ccf=last.get("water_ccf"), service_days=last.get("service_days"),
+          period_start=(_period_start(last).isoformat()
+                        if _period_start(last) else None),
+          period_end=(_period_end(last).isoformat()
+                      if _period_end(last) else None),
+          meter_read=last.get("current_read")),
         s("sensor.tampa_water_last_bill_cost", last.get("water_total_cost"),
           unit_of_measurement="USD", device_class="monetary",
           friendly_name="Tampa Water Last Bill Cost", icon="mdi:water"),
@@ -326,17 +227,6 @@ def sensor_payloads(data: dict) -> list[tuple[str, object, dict]]:
                      unit_of_measurement="USD", device_class="monetary",
                      friendly_name=f"Tampa Water Tier {t['tier']} Cost",
                      icon="mdi:stairs", ccf=t.get("ccf"), rate=t.get("rate")))
-    # meter validation
-    for eid, v in (cmp_latest.get("entities") or {}).items():
-        slug = eid.split(".")[-1]
-        out.append(s(f"sensor.tampa_water_vs_{slug}", v.get("diff_pct"),
-                     unit_of_measurement="%", friendly_name=f"Billed vs {slug}",
-                     icon="mdi:scale-balance",
-                     measured_gallons=v.get("total_gallons"),
-                     billed_gallons=cmp_latest.get("billed_gallons"),
-                     diff_gallons=v.get("diff_gallons"),
-                     period_start=cmp_latest.get("period_start"),
-                     period_end=cmp_latest.get("period_end")))
     return [(e, ("" if st is None else st), a) for e, st, a in out if st is not None]
 
 
@@ -416,10 +306,6 @@ async def publish(data: dict, log) -> None:
             await import_statistics(session, bills, tz, log)
         except Exception:  # noqa: BLE001
             log.exception("import_statistics failed")
-        try:
-            data["comparison"] = await compare_meters(session, bills, tz, log)
-        except Exception:  # noqa: BLE001
-            log.exception("meter comparison failed")
         try:
             await update_sensors(session, data, log)
         except Exception:  # noqa: BLE001
