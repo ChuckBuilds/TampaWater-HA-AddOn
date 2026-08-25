@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Pinning actions to SHAs is only safe if something moves them forward when
+  # upstream patches a vulnerability.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: "/tampa_water/app"
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker
+    directory: "/tampa_water"
+    schedule:
+      interval: weekly

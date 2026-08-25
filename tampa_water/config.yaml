@@ -1,0 +1,59 @@
+name: Tampa Water
+version: "1.0.0"
+slug: tampa_water
+description: >-
+  Pulls City of Tampa water, wastewater and solid-waste billing into Home
+  Assistant - billed gallons and cost on the Water Dashboard, per-tier cost
+  breakdown, a never-purged bill archive, and an optional accuracy check that
+  compares Flume / Flo against the meter you are actually billed on.
+url: https://github.com/ChuckBuilds/TampaWater-HA-AddOn
+arch:
+  - amd64
+  - aarch64
+  - armv7
+init: false
+
+# Talk to the HA Core API (import statistics, create sensors, read recorder)
+homeassistant_api: true
+
+# --- side panel (ingress) -------------------------------------------------- #
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:water
+panel_title: Tampa Water
+
+# --- optional external API port -------------------------------------------- #
+# NOT published by default. The add-on pushes to HA itself and the dashboard is
+# served over ingress, so nothing needs this open. Publishing it puts your whole
+# billing archive on your LAN - set a port in the Network tab only if you want
+# direct API access, and set auth_token when you do.
+ports:
+  8099/tcp: null
+ports_description:
+  8099/tcp: >-
+    Direct API access (optional, off by default). Leave empty unless you need
+    /data or /export from outside Home Assistant. Set auth_token too.
+
+# --- persistent archive ---------------------------------------------------- #
+# Add-ons get a persistent /data dir automatically; the bill archive lives in
+# /data/cache and is never purged, so history outlives the ~11 months the
+# portal itself keeps. Back up the add-on to preserve it.
+
+options:
+  tampa_user: ""
+  tampa_pass: ""
+  auth_token: ""
+  compare_entities: ""
+  backfill_bills: 24
+  poll_interval_hours: 12
+  setup_water_dashboard: true
+  log_level: info
+schema:
+  tampa_user: str
+  tampa_pass: password
+  auth_token: password?
+  compare_entities: str?
+  backfill_bills: int(1,60)
+  poll_interval_hours: int(1,48)
+  setup_water_dashboard: bool
+  log_level: list(trace|debug|info|warning|error)

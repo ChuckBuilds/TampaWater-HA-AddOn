@@ -1,0 +1,314 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tampa Water</title>
+<style>
+  :root{
+    --bg:#0f1720; --panel:#16202b; --line:#243141; --fg:#e6edf5; --muted:#8fa3b8;
+    --water:#3fa7ff; --ww:#8b7bd8; --trash:#f0a63c; --ok:#43c07a; --warn:#e0574b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 20px;
+         border-bottom:1px solid var(--line);background:var(--panel);
+         position:sticky;top:0;z-index:5;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;letter-spacing:.3px}
+  .muted{color:var(--muted);font-weight:400}
+  main{padding:18px 20px 40px;max-width:1360px;margin:0 auto}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));
+         gap:12px;margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .k{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+  .v{font-size:22px;font-weight:600;margin-top:4px}
+  .v small{font-size:12px;font-weight:400;color:var(--muted)}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+          padding:14px 16px;margin-bottom:16px;overflow:auto}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);
+     margin:0 0 12px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:900px){.row{grid-template-columns:1fr}}
+  .bars{display:flex;align-items:flex-end;gap:3px;height:170px}
+  .bar{flex:1;min-width:4px;border-radius:3px 3px 0 0;position:relative}
+  .stack{flex:1;min-width:4px;display:flex;flex-direction:column-reverse}
+  .stack div{width:100%}
+  .axis{display:flex;justify-content:space-between;color:var(--muted);
+        font-size:11px;margin-top:6px}
+  table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+  th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;
+        white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;
+     letter-spacing:.5px;cursor:pointer;user-select:none}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-bottom:10px}
+  .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+  button,a.btn{background:var(--water);color:#04121f;border:0;border-radius:7px;
+    padding:7px 13px;font-weight:600;cursor:pointer;font-size:13px;text-decoration:none}
+  button.ghost,a.ghost{background:transparent;color:var(--fg);
+    border:1px solid var(--line)}
+  .pill{padding:2px 7px;border-radius:20px;font-size:11px;font-weight:600}
+  .good{background:rgba(67,192,122,.16);color:var(--ok)}
+  .bad{background:rgba(224,87,75,.16);color:var(--warn)}
+  #status{padding:22px;color:var(--muted)}
+  .err{color:var(--warn)}
+  .tip{position:fixed;pointer-events:none;background:#0b1219;border:1px solid var(--line);
+       border-radius:7px;padding:7px 9px;font-size:12px;display:none;z-index:20;
+       box-shadow:0 6px 22px rgba(0,0,0,.5)}
+  .tip .h{font-weight:600;margin-bottom:3px}
+</style>
+
+<header>
+  <h1>💧 Tampa Water <span class="muted" id="sub"></span></h1>
+  <div style="flex:1"></div>
+  <a class="btn ghost" id="csv" href="export?format=csv">Export CSV</a>
+  <button class="ghost" id="reload">Reload</button>
+  <button id="refresh">Refresh from Tampa</button>
+</header>
+
+<main>
+  <div id="status">Loading…</div>
+  <div id="content" style="display:none">
+    <div class="cards" id="cards"></div>
+
+    <div class="row">
+      <section>
+        <h2>Water used per bill (gallons)</h2>
+        <div class="bars" id="galBars"></div><div class="axis" id="galAxis"></div>
+      </section>
+      <section>
+        <h2>Bill cost per period</h2>
+        <div class="legend">
+          <span><i class="sw" style="background:var(--water)"></i>water</span>
+          <span><i class="sw" style="background:var(--ww)"></i>wastewater</span>
+          <span><i class="sw" style="background:var(--trash)"></i>solid waste</span>
+        </div>
+        <div class="bars" id="costBars"></div><div class="axis" id="costAxis"></div>
+      </section>
+    </div>
+
+    <section>
+      <h2>Water cost by tier (conservation pricing)</h2>
+      <div class="legend" id="tierLegend"></div>
+      <div class="bars" id="tierBars"></div><div class="axis" id="tierAxis"></div>
+    </section>
+
+    <section id="cmpSection" style="display:none">
+      <h2>Meter check — Flume / Flo vs the billed meter</h2>
+      <div class="muted" style="margin-bottom:10px">
+        Each device is summed over the bill's exact service window (meter read to
+        meter read), not the calendar month.
+      </div>
+      <table id="cmpTbl"><thead><tr>
+        <th>Service period</th><th>Billed (gal)</th>
+      </tr></thead><tbody></tbody></table>
+    </section>
+
+    <section>
+      <h2>All bills <span class="muted" id="billCount"></span></h2>
+      <table id="tbl"><thead><tr>
+        <th data-k="bill_date">Bill date</th>
+        <th data-k="read_date">Meter read</th>
+        <th data-k="service_days">Days</th>
+        <th data-k="water_ccf">CCF</th>
+        <th data-k="water_gallons">Gallons</th>
+        <th data-k="water_total_cost">Water $</th>
+        <th data-k="wastewater_total_cost">Wastewater $</th>
+        <th data-k="solid_waste_cost">Trash $</th>
+        <th data-k="one_off">One-off $</th>
+        <th data-k="amount_due">Total $</th>
+      </tr></thead><tbody></tbody></table>
+    </section>
+  </div>
+</main>
+<div class="tip" id="tip"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = (n,d=0) => n==null ? "—" :
+  Number(n).toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d});
+const money = n => n==null ? "—" : "$"+Number(n).toLocaleString(undefined,
+  {minimumFractionDigits:2,maximumFractionDigits:2});
+const TIER_COLORS = ["#3fa7ff","#5ac8a8","#f0c33c","#f0783c","#e0574b","#c94fd8"];
+let DATA=null, sortKey="bill_date", sortDir=-1;
+
+const tip=$("#tip");
+function bindTip(el, html){
+  el.onmousemove = e => { tip.innerHTML=html; tip.style.display="block";
+    const w=tip.offsetWidth, x=Math.min(e.clientX+14, innerWidth-w-10);
+    tip.style.left=x+"px"; tip.style.top=(e.clientY+14)+"px"; };
+  el.onmouseleave = () => tip.style.display="none";
+}
+
+function bars(host, axis, rows, get, label, color, tipFn, dec=0){
+  const vals = rows.map(get).filter(v => v!=null);
+  const max = Math.max(...vals, 0) || 1;
+  host.innerHTML="";
+  rows.forEach(r=>{
+    const v = get(r);
+    const d = document.createElement("div");
+    d.className="bar";
+    d.style.height = Math.max(2, (v||0)/max*100) + "%";
+    d.style.background = color;
+    if(tipFn) bindTip(d, tipFn(r));
+    host.appendChild(d);
+  });
+  const sum = vals.reduce((a,b)=>a+b,0);
+  axis.innerHTML = `<span>${label(rows[0])||""}</span>`+
+    `<span>min ${fmt(Math.min(...vals),dec)} · avg ${fmt(sum/(vals.length||1),dec)} · max ${fmt(max,dec)}</span>`+
+    `<span>${label(rows[rows.length-1])||""}</span>`;
+}
+
+function stacked(host, axis, rows, parts, label){
+  const totals = rows.map(r => parts.reduce((s,p)=>s+(r[p.key]||0),0));
+  const max = Math.max(...totals,0)||1;
+  host.innerHTML="";
+  rows.forEach((r,i)=>{
+    const col=document.createElement("div"); col.className="stack";
+    col.style.height = Math.max(2,(totals[i]/max)*100)+"%";
+    parts.forEach(p=>{
+      const seg=document.createElement("div");
+      const v=r[p.key]||0;
+      seg.style.height = totals[i] ? (v/totals[i]*100)+"%" : "0";
+      seg.style.background = p.color;
+      col.appendChild(seg);
+    });
+    bindTip(col, `<div class="h">${r.bill_date||""}</div>`+
+      parts.map(p=>`${p.name}: <b>${money(r[p.key])}</b>`).join("<br>")+
+      `<br>total: <b>${money(totals[i])}</b>`);
+    host.appendChild(col);
+  });
+  const sum=totals.reduce((a,b)=>a+b,0);
+  axis.innerHTML=`<span>${label(rows[0])||""}</span>`+
+    `<span>avg ${money(sum/(rows.length||1))} · max ${money(max)}</span>`+
+    `<span>${label(rows[rows.length-1])||""}</span>`;
+}
+
+function render(){
+  const all = (DATA.bills||[]).slice();
+  const asc = all.slice().sort((a,b)=>(a.bill_date||"").localeCompare(b.bill_date||""));
+  const last = all.slice().sort((a,b)=>(b.bill_date||"").localeCompare(a.bill_date||""))[0]||{};
+  $("#sub").textContent = `${DATA.archived ?? all.length} bills archived` +
+    (DATA.exported_at ? ` · ${new Date(DATA.exported_at).toLocaleString()}` : "");
+
+  const yr = asc.slice(-12);
+  const yrWater = yr.reduce((s,b)=>s+(b.water_total_cost||0),0);
+  const yrAll = yr.reduce((s,b)=>s+(b.water_total_cost||0)+(b.wastewater_total_cost||0)+(b.solid_waste_cost||0),0);
+  const yrGal = yr.reduce((s,b)=>s+(b.water_gallons||0),0);
+
+  $("#cards").innerHTML = `
+    <div class="card"><div class="k">Latest bill</div><div class="v">${money(last.amount_due)}</div>
+      <div class="muted">${last.bill_date||"—"}</div></div>
+    <div class="card"><div class="k">Water used</div><div class="v">${fmt(last.water_gallons)} <small>gal</small></div>
+      <div class="muted">${fmt(last.water_ccf)} CCF · ${last.service_days||"?"}d</div></div>
+    <div class="card"><div class="k">Water cost</div><div class="v">${money(last.water_total_cost)}</div>
+      <div class="muted">${money(last.cost_per_1000_gal)}/1000 gal</div></div>
+    <div class="card"><div class="k">Wastewater</div><div class="v">${money(last.wastewater_total_cost)}</div>
+      <div class="muted">billed on ${fmt(last.wastewater_ccf)} CCF (cap ${fmt(last.sewer_max_ccf)})</div></div>
+    <div class="card"><div class="k">Solid waste</div><div class="v">${money(last.solid_waste_cost)}</div>
+      <div class="muted">flat monthly</div></div>
+    <div class="card"><div class="k">Last 12 bills</div><div class="v">${money(yrAll)}</div>
+      <div class="muted">water ${money(yrWater)} · ${fmt(yrGal)} gal</div></div>`;
+
+  bars($("#galBars"), $("#galAxis"), asc, b=>b.water_gallons,
+       b=>b&&b.bill_date, "var(--water)",
+       b=>`<div class="h">${b.bill_date||""}</div>`+
+          `Period: ${b.read_date? (dateMinus(b.read_date,b.service_days)+" → "+b.read_date):"?"}<br>`+
+          `Used: <b>${fmt(b.water_gallons)} gal</b> (${fmt(b.water_ccf)} CCF)<br>`+
+          `Water cost: <b>${money(b.water_total_cost)}</b>`);
+
+  stacked($("#costBars"), $("#costAxis"), asc, [
+    {key:"water_total_cost", name:"water", color:"var(--water)"},
+    {key:"wastewater_total_cost", name:"wastewater", color:"var(--ww)"},
+    {key:"solid_waste_cost", name:"solid waste", color:"var(--trash)"},
+  ], b=>b&&b.bill_date);
+
+  // tiers: a stacked bar per bill, one segment per tier
+  const tierNums = [...new Set(asc.flatMap(b=>(b.tiers||[]).map(t=>t.tier)))]
+                    .filter(t=>t!=null).sort((a,b)=>a-b);
+  $("#tierLegend").innerHTML = tierNums.map(n=>
+    `<span><i class="sw" style="background:${TIER_COLORS[n%TIER_COLORS.length]}"></i>tier ${n}</span>`).join("");
+  const tierRows = asc.map(b=>{
+    const o={bill_date:b.bill_date};
+    tierNums.forEach(n=>{
+      const t=(b.tiers||[]).find(x=>x.tier===n);
+      o["t"+n] = t? t.cost : 0;
+      o["r"+n] = t? t.rate : null;
+    });
+    return o;
+  });
+  stacked($("#tierBars"), $("#tierAxis"), tierRows,
+    tierNums.map(n=>({key:"t"+n, name:`tier ${n}`,
+                      color:TIER_COLORS[n%TIER_COLORS.length]})),
+    b=>b&&b.bill_date);
+
+  renderComparison();
+  renderTable(all);
+  $("#status").style.display="none"; $("#content").style.display="block";
+}
+
+function dateMinus(iso, days){
+  if(!iso||!days) return "?";
+  const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()-days);
+  return d.toISOString().slice(0,10);
+}
+
+function renderComparison(){
+  const cmp = DATA.comparison||[];
+  if(!cmp.length){ $("#cmpSection").style.display="none"; return; }
+  $("#cmpSection").style.display="";
+  const ids=[...new Set(cmp.flatMap(c=>Object.keys(c.entities||{})))];
+  const thead=$("#cmpTbl thead tr");
+  thead.innerHTML='<th>Service period</th><th>Billed (gal)</th>'+
+    ids.map(i=>`<th>${i.split(".").pop()}</th>`).join("");
+  $("#cmpTbl tbody").innerHTML = cmp.slice().reverse().map(c=>{
+    const cells = ids.map(i=>{
+      const v=(c.entities||{})[i];
+      if(!v) return "<td>—</td>";
+      const cls = Math.abs(v.diff_pct??0)<=5 ? "good":"bad";
+      return `<td>${fmt(v.total_gallons)}<br>`+
+             `<span class="pill ${cls}">${v.diff_pct>0?"+":""}${fmt(v.diff_pct,1)}%</span></td>`;
+    }).join("");
+    return `<tr><td>${c.period_start} → ${c.period_end}</td>`+
+           `<td>${fmt(c.billed_gallons)}</td>${cells}</tr>`;
+  }).join("");
+}
+
+// deposits and set-up fees are real charges but not a service line, so without
+// this column the Sept row reads as water+wastewater+trash != total
+const oneOff = b => (b.deposit_cost||0)+(b.fee_cost||0);
+
+function renderTable(bills){
+  bills.sort((a,b)=>{
+    const x = sortKey==="one_off" ? oneOff(a) : a[sortKey];
+    const y = sortKey==="one_off" ? oneOff(b) : b[sortKey];
+    if(x==null) return 1; if(y==null) return -1;
+    return (x>y?1:x<y?-1:0)*sortDir;
+  });
+  $("#billCount").textContent=`(${bills.length})`;
+  $("#tbl tbody").innerHTML = bills.map(b=>`<tr>
+    <td>${b.bill_date||"—"}</td><td>${b.read_date||"—"}</td>
+    <td>${b.service_days??"—"}</td><td>${fmt(b.water_ccf)}</td>
+    <td>${fmt(b.water_gallons)}</td><td>${money(b.water_total_cost)}</td>
+    <td>${money(b.wastewater_total_cost)}</td><td>${money(b.solid_waste_cost)}</td>
+    <td>${oneOff(b) ? money(oneOff(b)) : "—"}</td>
+    <td>${money(b.amount_due)}</td></tr>`).join("");
+}
+document.querySelectorAll("#tbl th").forEach(th=>th.onclick=()=>{
+  const k=th.dataset.k; if(!k) return;
+  sortDir = (sortKey===k? -sortDir : -1); sortKey=k; render();
+});
+
+async function load(url,label){
+  $("#status").style.display="block"; $("#content").style.display="none";
+  $("#status").className=""; $("#status").textContent=label;
+  try{
+    const r=await fetch(url);
+    if(!r.ok) throw new Error("HTTP "+r.status+" — "+(await r.text()).slice(0,200));
+    DATA=await r.json(); render();
+  }catch(e){
+    $("#status").className="err"; $("#status").textContent="Error: "+e.message;
+  }
+}
+$("#reload").onclick=()=>load("export","Reloading archive…");
+$("#refresh").onclick=()=>load("data","Refreshing from Tampa (can take a minute)…");
+load("export","Loading archive…");
+</script>

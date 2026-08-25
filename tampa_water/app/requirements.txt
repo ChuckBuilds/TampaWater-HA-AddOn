@@ -1,0 +1,8 @@
+# Bounded ranges: floors keep known-good behaviour, ceilings stop an unattended
+# rebuild pulling a new major. Dependabot proposes the bumps.
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.29,<1.0
+requests>=2.31,<3.0
+beautifulsoup4>=4.12,<5.0
+aiohttp>=3.9,<4.0
+pypdf>=4.2,<7.0
