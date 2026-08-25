@@ -10,7 +10,6 @@ url: https://github.com/ChuckBuilds/TampaWater-HA-AddOn
 arch:
   - amd64
   - aarch64
-  - armv7
 init: false
 
 # Talk to the HA Core API (import statistics, create sensors, read recorder)
@@ -18,7 +17,6 @@ homeassistant_api: true
 
 # --- side panel (ingress) -------------------------------------------------- #
 ingress: true
-ingress_port: 8099
 panel_icon: mdi:water
 panel_title: Tampa Water
 
