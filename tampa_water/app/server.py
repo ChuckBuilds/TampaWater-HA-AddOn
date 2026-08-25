@@ -74,6 +74,10 @@ def _save_cache(cache: dict) -> None:
     os.replace(tmp, CACHE_FILE)
 
 
+class ConfigError(RuntimeError):
+    """Something the user must fix on the Configuration tab."""
+
+
 class TampaSession:
     """Owns the archive. Bills are keyed by doc id and never purged, so history
     outlives the ~11 months the portal keeps."""
@@ -88,7 +92,9 @@ class TampaSession:
             user = os.environ.get("TAMPA_USER")
             pw = os.environ.get("TAMPA_PASS")
             if not user or not pw:
-                raise RuntimeError("TAMPA_USER / TAMPA_PASS not set")
+                raise ConfigError(
+                    "no credentials yet - set your City of Tampa portal username "
+                    "and password on the add-on's Configuration tab, then restart")
 
             def work():
                 c = tampa_client.TampaWaterClient(user, pw)
@@ -134,6 +140,7 @@ session = TampaSession()
 async def _poll_loop() -> None:
     last = 0.0
     water_configured = False
+    warned = False
     while True:
         try:
             now = time.time()
@@ -151,8 +158,19 @@ async def _poll_loop() -> None:
                 import aiohttp
                 async with aiohttp.ClientSession() as s:
                     await ha_publish.update_sensors(s, session._last_data, LOG, quiet=True)
-        except Exception:  # noqa: BLE001
-            LOG.exception("poll cycle failed")
+        except ConfigError as e:
+            # The expected state of a fresh install. A stack trace every cycle
+            # would read as a crash; say what to do instead, and only once.
+            if not warned:
+                LOG.warning("%s", e)
+                warned = True
+        except Exception as e:  # noqa: BLE001
+            msg = str(e)
+            if "login failed" in msg or "_csrf" in msg:
+                # a wrong password or a changed login flow: actionable, not a bug
+                LOG.error("could not sign in to the City of Tampa portal: %s", msg)
+            else:
+                LOG.exception("poll cycle failed")
         await asyncio.sleep(SENSOR_REFRESH)
 
 

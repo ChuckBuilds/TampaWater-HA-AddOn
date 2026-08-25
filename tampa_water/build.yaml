@@ -1,0 +1,9 @@
+# Required because the Dockerfile uses ARG BUILD_FROM.
+#
+# Without this file the Supervisor substitutes its OWN default base image (an
+# Alpine-based HA base with no pip), overriding the Dockerfile's default and
+# failing the build at `pip install`. Pin a Python base per architecture instead.
+# python:3.12-slim-bookworm is multi-arch, so both entries use the same tag.
+build_from:
+  amd64: python:3.12-slim-bookworm
+  aarch64: python:3.12-slim-bookworm
