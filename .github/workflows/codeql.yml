@@ -15,6 +15,10 @@ jobs:
   analyze:
     name: Analyze Python
     runs-on: ubuntu-latest
+    # Code scanning needs GitHub Advanced Security on a PRIVATE repo, so the
+    # upload would fail here. Skip rather than leave a permanently red workflow;
+    # this starts running by itself if the repo is ever made public.
+    if: github.event.repository.private == false
     permissions:
       security-events: write
       contents: read
