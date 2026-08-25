@@ -177,6 +177,43 @@ async def import_statistics(session, bills: list[dict], tz, log) -> None:
 # --------------------------------------------------------------------------- #
 # meter validation: Flume / Flo vs the billed meter
 # --------------------------------------------------------------------------- #
+def window_total(series: list[dict], window_start_iso: str) -> float | None:
+    """Consumption inside [window_start, end] from HA statistics buckets.
+
+    `series` is expected to start ONE bucket before the window (see the caller).
+
+    Preferred path is HA's per-bucket `change`, summed over in-window buckets.
+    Otherwise fall back to cumulative `sum`, using the last bucket that starts
+    BEFORE the window as the baseline -- subtracting the first in-window bucket
+    instead would discard that bucket's own consumption.
+    """
+    if not series:
+        return None
+    ws = window_start_iso[:10]
+
+    def in_window(p) -> bool:
+        return str(p.get("start", ""))[:10] >= ws
+
+    inside = [p for p in series if in_window(p)]
+    if not inside:
+        return None
+    if all(p.get("change") is not None for p in inside):
+        return round(sum(float(p["change"]) for p in inside), 1)
+
+    baseline = None
+    for p in series:
+        if not in_window(p) and p.get("sum") is not None:
+            baseline = p
+    last = inside[-1]
+    if last.get("sum") is None:
+        return None
+    if baseline is not None:
+        return round(float(last["sum"]) - float(baseline["sum"]), 1)
+    # no baseline available: the best we can do is first-to-last, which
+    # under-counts by the first bucket. Signal that rather than mislead.
+    return None
+
+
 async def compare_meters(session, bills: list[dict], tz, log) -> list[dict]:
     """Sum each comparison entity over each bill's service window.
 
@@ -195,15 +232,24 @@ async def compare_meters(session, bills: list[dict], tz, log) -> list[dict]:
             billed = b.get("water_gallons")
             if not (start and end and billed):
                 continue
-            s_iso = datetime(start.year, start.month, start.day, tzinfo=tz).isoformat()
+            # Ask for one extra day BEFORE the window so a cumulative meter has a
+            # baseline bucket to subtract from. Without it, last.sum - first.sum
+            # measures from the END of the first in-window bucket and silently
+            # drops that day -- a ~3% under-count over a month, which is the same
+            # size as the discrepancy this check exists to find.
+            s_iso = datetime(start.year, start.month, start.day,
+                             tzinfo=tz).isoformat()
+            base = start - timedelta(days=1)
+            b_iso = datetime(base.year, base.month, base.day, tzinfo=tz).isoformat()
             e_iso = datetime(end.year, end.month, end.day, tzinfo=tz).isoformat()
             entry = {"period_start": start.isoformat(), "period_end": end.isoformat(),
                      "billed_gallons": billed, "entities": {}}
             for eid in COMPARE_ENTITIES:
                 await ws.send_json({
                     "id": mid, "type": "recorder/statistics_during_period",
-                    "start_time": s_iso, "end_time": e_iso,
-                    "statistic_ids": [eid], "period": "day", "types": ["sum", "state"],
+                    "start_time": b_iso, "end_time": e_iso,
+                    "statistic_ids": [eid], "period": "day",
+                    "types": ["change", "sum", "state"],
                 })
                 resp = await ws.receive_json()
                 mid += 1
@@ -211,12 +257,9 @@ async def compare_meters(session, bills: list[dict], tz, log) -> list[dict]:
                 if not series:
                     continue
                 # a cumulative meter: total over the window is last sum - first sum
-                first, last = series[0], series[-1]
-                total = None
-                if first.get("sum") is not None and last.get("sum") is not None:
-                    total = round(float(last["sum"]) - float(first["sum"]), 1)
+                total = window_total(series, s_iso)
                 if total is None:
-                    total = round(sum(float(p.get("state") or 0) for p in series), 1)
+                    continue
                 diff = round(total - float(billed), 1)
                 pct = round(diff / float(billed) * 100.0, 2) if billed else None
                 entry["entities"][eid] = {"total_gallons": total,

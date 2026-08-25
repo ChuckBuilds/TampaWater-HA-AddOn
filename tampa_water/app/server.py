@@ -37,7 +37,13 @@ import client as tampa_client  # noqa: E402
 import ha_publish  # noqa: E402
 
 LOG = logging.getLogger("tampa_water")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# `log_level` is an add-on option; honour it rather than pinning INFO
+_LEVEL = (os.environ.get("LOG_LEVEL") or "info").upper()
+logging.basicConfig(level=getattr(logging, _LEVEL, logging.INFO),
+                    format="%(asctime)s %(levelname)s %(message)s")
+
+# pypdf is noisy about malformed-but-readable structures in these bills
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 POLL_INTERVAL = max(1, int(os.environ.get("POLL_INTERVAL_HOURS", "12"))) * 3600
 SENSOR_REFRESH = max(1, int(os.environ.get("SENSOR_REFRESH_MIN", "10"))) * 60

@@ -12,6 +12,7 @@ export COMPARE_ENTITIES="$(get compare_entities '')"
 export BACKFILL_BILLS="$(get backfill_bills 24)"
 export POLL_INTERVAL_HOURS="$(get poll_interval_hours 12)"
 export SETUP_WATER_DASHBOARD="$(get setup_water_dashboard True | sed 's/True/1/;s/False/0/')"
+export LOG_LEVEL="$(get log_level info)"
 export CACHE_DIR="/data/cache"          # persistent + never purged
 # SUPERVISOR_TOKEN is injected by Supervisor (homeassistant_api: true)
 
