@@ -1,0 +1,22 @@
+# Secrets & PII — never commit
+water.env
+*.local
+fixtures/
+debug_out/
+recon_out/
+*.pdf
+
+# runtime caches / archives
+cache/
+tampa_water/app/cache/
+**/last_payload.json
+options.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS
+.DS_Store
