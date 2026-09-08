@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.1
+- **Fix: the add-on would not build.** The Dockerfile declared a build argument
+  for its base image, and Supervisor substitutes its own base into that argument
+  -- `ghcr.io/home-assistant/base`, which is Alpine and has no pip -- so the build
+  died at `pip install` with "pip: not found". A `build.yaml` declaring
+  `build_from` did not prevent it (this install goes through Supervisor's newer
+  apps path, which appears not to honour it). The base is now pinned directly
+  with no argument to substitute, and `build.yaml` is gone since it only existed
+  to feed that argument.
+
 ## 1.0.0
 First release.
 

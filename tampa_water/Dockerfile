@@ -1,9 +1,15 @@
 # Tampa Water add-on image.
-# No browser: the City of Tampa portal is a plain Spring form login with no
-# captcha, so requests + BeautifulSoup is enough. That keeps this image small
-# (tens of MB rather than the ~1GB a Chromium-based scraper needs).
-ARG BUILD_FROM=python:3.12-slim-bookworm
-FROM ${BUILD_FROM}
+#
+# The base image is pinned here on purpose, and this Dockerfile deliberately
+# declares no build argument for it. Supervisor substitutes its own base image
+# into such an argument when one exists -- ghcr.io/home-assistant/base, which is
+# Alpine and has no pip -- and it did so even with a build.yaml present, failing
+# the build with "pip: not found". With no argument to substitute, the build-arg
+# Supervisor passes is simply unused and this FROM always wins.
+#
+# Debian (glibc) rather than Alpine on purpose: every dependency here has a
+# manylinux wheel, so nothing has to be compiled at install time.
+FROM python:3.12-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1

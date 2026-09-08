@@ -1,5 +1,5 @@
 name: Tampa Water
-version: "1.0.0"
+version: "1.0.1"
 slug: tampa_water
 description: >-
   Pulls City of Tampa water, wastewater and solid-waste billing into Home
